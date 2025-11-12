@@ -23,6 +23,9 @@ runtime_settings: Dict[str, Any] = {
     "drop_table": None,
     # 全局掉落触发概率覆盖：{"easy":0.35,"normal":0.30,...}
     "drop_rate": None,
+    # 联机服务器覆盖：主机地址 & 端口（0 表示使用默认配置）
+    "net_host": "",
+    "net_port": 0,
 }
 
 

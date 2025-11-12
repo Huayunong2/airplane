@@ -18,6 +18,7 @@ from utils import assets
 from utils.logger import get_logger
 from game.props_system import PROP_SPECS
 from game.pause_menu import PauseMenu
+from game import settings_store
 logger = get_logger("online_coop")
 
 
@@ -281,7 +282,20 @@ def run(as_child: bool = True, engine: "Engine | None" = None, invite_code: Opti
     import json as _json
     from utils.config import load_config
     cfg = load_config()
-    uri = f"ws://{cfg['network']['ws_host']}:{cfg['network']['ws_port']}"
+    override_host = settings_store.get_setting("net_host", "")
+    if isinstance(override_host, str):
+        override_host = override_host.strip()
+    else:
+        override_host = str(override_host).strip()
+    override_port = settings_store.get_setting("net_port", 0)
+    try:
+        override_port_int = int(override_port)
+    except (TypeError, ValueError):
+        override_port_int = 0
+    ws_host = override_host or cfg["network"]["ws_host"]
+    ws_port = override_port_int if override_port_int else cfg["network"]["ws_port"]
+    uri = f"ws://{ws_host}:{ws_port}"
+    logger.info("Connecting to server %s:%s", ws_host, ws_port)
     player_id = uuid.uuid4().hex[:6]
     net = NetClient(uri, player_id, invite_code=invite_code, create_new=create_new)
     net.start()
