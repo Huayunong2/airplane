@@ -51,94 +51,111 @@ def _input_room_code(engine: Engine, bg_menu, dim_overlay, font_big, font_small,
         surface.blit(text_surf, pos)
     
     inputting = True
-    while inputting:
-        engine.begin_frame()
-        dt = engine.clock.get_time() / 1000.0
-        cursor_timer += dt
-        if cursor_timer >= 0.5:
-            cursor_visible = not cursor_visible
-            cursor_timer = 0.0
-        
-        for ev in pygame.event.get():
-            if ev.type == pygame.QUIT:
-                return None
-            elif ev.type == pygame.KEYDOWN:
-                if ev.key == pygame.K_ESCAPE:
+    orig_repeat = pygame.key.get_repeat()
+    repeat_enabled = False
+    try:
+        pygame.key.set_repeat(300, 45)
+        repeat_enabled = True
+    except Exception:
+        repeat_enabled = False
+    try:
+        while inputting:
+            engine.begin_frame()
+            dt = engine.clock.get_time() / 1000.0
+            cursor_timer += dt
+            if cursor_timer >= 0.5:
+                cursor_visible = not cursor_visible
+                cursor_timer = 0.0
+            
+            for ev in pygame.event.get():
+                if ev.type == pygame.QUIT:
                     return None
-                elif ev.key == pygame.K_RETURN:
-                    # 验证房间号格式（6位字母数字）
-                    room_code_clean = room_code.strip().upper()
-                    if len(room_code_clean) == 6 and room_code_clean.isalnum():
-                        return room_code_clean
-                    else:
-                        error_msg = "房间号必须是6位字母或数字"
-                elif ev.key == pygame.K_BACKSPACE:
-                    room_code = room_code[:-1]
-                    error_msg = ""
-                else:
-                    # 只接受字母和数字
-                    if ev.unicode and ev.unicode.isalnum() and len(room_code) < 6:
-                        room_code += ev.unicode.upper()
+                elif ev.type == pygame.KEYDOWN:
+                    if ev.key == pygame.K_ESCAPE:
+                        return None
+                    elif ev.key == pygame.K_RETURN:
+                        # 验证房间号格式（6位字母数字）
+                        room_code_clean = room_code.strip().upper()
+                        if len(room_code_clean) == 6 and room_code_clean.isalnum():
+                            return room_code_clean
+                        else:
+                            error_msg = "房间号必须是6位字母或数字"
+                    elif ev.key == pygame.K_BACKSPACE:
+                        room_code = room_code[:-1]
                         error_msg = ""
-        
-        # 绘制背景
-        if bg_menu is not None:
-            engine.screen.blit(bg_menu, (0, 0))
-        engine.screen.blit(dim_overlay, (0, 0))
-        
-        # 标题 - 兼容两种字体类型
-        try:
-            # pygame.freetype 字体对象
-            title, _ = font_big.render("输入房间号", (255, 240, 200))
-        except (TypeError, AttributeError):
-            # pygame.font.Font 对象
-            title = font_big.render("输入房间号", True, (255, 240, 200))
-        blit_text_with_shadow(engine.screen, title, (engine.screen.get_width()//2 - title.get_width()//2, 200))
-        
-        # 输入框背景
-        input_box_width = 400
-        input_box_height = 60
-        input_box_x = engine.screen.get_width()//2 - input_box_width//2
-        input_box_y = 300
-        input_box = pygame.Rect(input_box_x, input_box_y, input_box_width, input_box_height)
-        pygame.draw.rect(engine.screen, (40, 50, 60), input_box, border_radius=8)
-        pygame.draw.rect(engine.screen, (100, 150, 200), input_box, width=2, border_radius=8)
-        
-        # 输入文本
-        display_text = room_code
-        if cursor_visible:
-            display_text += "_"
-        try:
-            text_surf, _ = font_big.render(display_text, (255, 255, 255))
-        except (TypeError, AttributeError):
-            text_surf = font_big.render(display_text, True, (255, 255, 255))
-        text_x = input_box_x + 20
-        text_y = input_box_y + (input_box_height - text_surf.get_height()) // 2
-        engine.screen.blit(text_surf, (text_x, text_y))
-        
-        # 提示信息
-        try:
-            hint1, _ = font_small.render("请输入6位房间号（字母或数字）", (200, 220, 240))
-        except (TypeError, AttributeError):
-            hint1 = font_small.render("请输入6位房间号（字母或数字）", True, (200, 220, 240))
-        blit_text_with_shadow(engine.screen, hint1, (engine.screen.get_width()//2 - hint1.get_width()//2, input_box_y + input_box_height + 20))
-        
-        try:
-            hint2, _ = font_hint.render("Enter 确认, ESC 取消", (180, 200, 220))
-        except (TypeError, AttributeError):
-            hint2 = font_hint.render("Enter 确认, ESC 取消", True, (180, 200, 220))
-        blit_text_with_shadow(engine.screen, hint2, (engine.screen.get_width()//2 - hint2.get_width()//2, input_box_y + input_box_height + 60))
-        
-        # 错误信息
-        if error_msg:
+                    else:
+                        # 只接受字母和数字
+                        if ev.unicode and ev.unicode.isalnum() and len(room_code) < 6:
+                            room_code += ev.unicode.upper()
+                            error_msg = ""
+            
+            # 绘制背景
+            if bg_menu is not None:
+                engine.screen.blit(bg_menu, (0, 0))
+            engine.screen.blit(dim_overlay, (0, 0))
+            
+            # 标题 - 兼容两种字体类型
             try:
-                error_surf, _ = font_small.render(error_msg, (255, 120, 120))
+                # pygame.freetype 字体对象
+                title, _ = font_big.render("输入房间号", (255, 240, 200))
             except (TypeError, AttributeError):
-                error_surf = font_small.render(error_msg, True, (255, 120, 120))
-            blit_text_with_shadow(engine.screen, error_surf, (engine.screen.get_width()//2 - error_surf.get_width()//2, input_box_y + input_box_height + 100))
-        
-        engine.end_frame()
-    
+                # pygame.font.Font 对象
+                title = font_big.render("输入房间号", True, (255, 240, 200))
+            blit_text_with_shadow(engine.screen, title, (engine.screen.get_width()//2 - title.get_width()//2, 200))
+            
+            # 输入框背景
+            input_box_width = 400
+            input_box_height = 60
+            input_box_x = engine.screen.get_width()//2 - input_box_width//2
+            input_box_y = 300
+            input_box = pygame.Rect(input_box_x, input_box_y, input_box_width, input_box_height)
+            pygame.draw.rect(engine.screen, (40, 50, 60), input_box, border_radius=8)
+            pygame.draw.rect(engine.screen, (100, 150, 200), input_box, width=2, border_radius=8)
+            
+            # 输入文本
+            display_text = room_code
+            if cursor_visible:
+                display_text += "_"
+            try:
+                text_surf, _ = font_big.render(display_text, (255, 255, 255))
+            except (TypeError, AttributeError):
+                text_surf = font_big.render(display_text, True, (255, 255, 255))
+            text_x = input_box_x + 20
+            text_y = input_box_y + (input_box_height - text_surf.get_height()) // 2
+            engine.screen.blit(text_surf, (text_x, text_y))
+            
+            # 提示信息
+            try:
+                hint1, _ = font_small.render("请输入6位房间号（字母或数字）", (200, 220, 240))
+            except (TypeError, AttributeError):
+                hint1 = font_small.render("请输入6位房间号（字母或数字）", True, (200, 220, 240))
+            blit_text_with_shadow(engine.screen, hint1, (engine.screen.get_width()//2 - hint1.get_width()//2, input_box_y + input_box_height + 20))
+            
+            try:
+                hint2, _ = font_hint.render("Enter 确认, ESC 取消", (180, 200, 220))
+            except (TypeError, AttributeError):
+                hint2 = font_hint.render("Enter 确认, ESC 取消", True, (180, 200, 220))
+            blit_text_with_shadow(engine.screen, hint2, (engine.screen.get_width()//2 - hint2.get_width()//2, input_box_y + input_box_height + 60))
+            
+            # 错误信息
+            if error_msg:
+                try:
+                    error_surf, _ = font_small.render(error_msg, (255, 120, 120))
+                except (TypeError, AttributeError):
+                    error_surf = font_small.render(error_msg, True, (255, 120, 120))
+                blit_text_with_shadow(engine.screen, error_surf, (engine.screen.get_width()//2 - error_surf.get_width()//2, input_box_y + input_box_height + 100))
+            
+            engine.end_frame()
+    finally:
+        if repeat_enabled:
+            try:
+                if orig_repeat and orig_repeat[0] > 0 and orig_repeat[1] > 0:
+                    pygame.key.set_repeat(orig_repeat[0], orig_repeat[1])
+                else:
+                    pygame.key.set_repeat()
+            except Exception:
+                pass
+
     return None
 
 
@@ -174,137 +191,154 @@ def _input_server_settings(engine: Engine, bg_menu, dim_overlay, font_big, font_
         surface.blit(text_surf, pos)
 
     inputting = True
-    while inputting:
-        engine.begin_frame()
-        dt = engine.clock.get_time() / 1000.0
-        cursor_timer += dt
-        if cursor_timer >= 0.5:
-            cursor_visible = not cursor_visible
-            cursor_timer = 0.0
+    orig_repeat = pygame.key.get_repeat()
+    repeat_enabled = False
+    try:
+        pygame.key.set_repeat(300, 45)
+        repeat_enabled = True
+    except Exception:
+        repeat_enabled = False
+    try:
+        while inputting:
+            engine.begin_frame()
+            dt = engine.clock.get_time() / 1000.0
+            cursor_timer += dt
+            if cursor_timer >= 0.5:
+                cursor_visible = not cursor_visible
+                cursor_timer = 0.0
 
-        for ev in pygame.event.get():
-            if ev.type == pygame.QUIT:
-                return None
-            elif ev.type == pygame.KEYDOWN:
-                if ev.key == pygame.K_ESCAPE:
+            for ev in pygame.event.get():
+                if ev.type == pygame.QUIT:
                     return None
-                elif ev.key in (pygame.K_TAB, pygame.K_UP, pygame.K_DOWN):
-                    field_index = (field_index + 1) % 2
-                elif ev.key == pygame.K_RETURN:
-                    host_clean = host.strip()
-                    port_clean = port.strip()
-                    if port_clean:
-                        try:
-                            port_int = int(port_clean)
-                        except ValueError:
-                            error_msg = "端口必须是数字"
-                            continue
-                        if not (1 <= port_int <= 65535):
-                            error_msg = "端口需在1-65535之间"
-                            continue
+                elif ev.type == pygame.KEYDOWN:
+                    if ev.key == pygame.K_ESCAPE:
+                        return None
+                    elif ev.key in (pygame.K_TAB, pygame.K_UP, pygame.K_DOWN):
+                        field_index = (field_index + 1) % 2
+                    elif ev.key == pygame.K_RETURN:
+                        host_clean = host.strip()
+                        port_clean = port.strip()
+                        if port_clean:
+                            try:
+                                port_int = int(port_clean)
+                            except ValueError:
+                                error_msg = "端口必须是数字"
+                                continue
+                            if not (1 <= port_int <= 65535):
+                                error_msg = "端口需在1-65535之间"
+                                continue
+                        else:
+                            port_int = 0
+                        settings_store.set_setting("net_host", host_clean)
+                        settings_store.set_setting("net_port", port_int)
+                        return host_clean, port_int
+                    elif ev.key == pygame.K_BACKSPACE:
+                        if field_index == 0:
+                            host = host[:-1]
+                        else:
+                            port = port[:-1]
                     else:
-                        port_int = 0
-                    settings_store.set_setting("net_host", host_clean)
-                    settings_store.set_setting("net_port", port_int)
-                    return host_clean, port_int
-                elif ev.key == pygame.K_BACKSPACE:
-                    if field_index == 0:
-                        host = host[:-1]
-                    else:
-                        port = port[:-1]
+                        ch = ev.unicode
+                        if not ch:
+                            continue
+                        if field_index == 0:
+                            if ch in allowed_host_chars and len(host) < 64:
+                                host += ch
+                        else:
+                            if ch.isdigit() and len(port) < 5:
+                                port += ch
+
+            # 绘制背景
+            if bg_menu is not None:
+                engine.screen.blit(bg_menu, (0, 0))
+            engine.screen.blit(dim_overlay, (0, 0))
+
+            # 标题
+            try:
+                title, _ = font_big.render("联机服务器设置", (255, 240, 200))
+            except (TypeError, AttributeError):
+                title = font_big.render("联机服务器设置", True, (255, 240, 200))
+            blit_text_with_shadow(engine.screen, title, (engine.screen.get_width() // 2 - title.get_width() // 2, 170))
+
+            # 默认提示
+            default_text = f"默认：{host_default}:{port_default}"
+            try:
+                default_surf, _ = font_hint.render(default_text, (200, 210, 220))
+            except (TypeError, AttributeError):
+                default_surf = font_hint.render(default_text, True, (200, 210, 220))
+            blit_text_with_shadow(engine.screen, default_surf, (engine.screen.get_width() // 2 - default_surf.get_width() // 2, 220))
+
+            # 输入框
+            input_box_w = 520
+            input_box_h = 56
+            start_y = 270
+            box_host = pygame.Rect(engine.screen.get_width() // 2 - input_box_w // 2, start_y, input_box_w, input_box_h)
+            box_port = pygame.Rect(engine.screen.get_width() // 2 - input_box_w // 2, start_y + 90, input_box_w, input_box_h)
+
+            def draw_box(rect, active):
+                color_border = (120, 180, 240) if active else (90, 120, 160)
+                pygame.draw.rect(engine.screen, (40, 50, 60), rect, border_radius=8)
+                pygame.draw.rect(engine.screen, color_border, rect, width=2, border_radius=8)
+
+            draw_box(box_host, field_index == 0)
+            draw_box(box_port, field_index == 1)
+
+            # 标签
+            labels = [
+                ("服务器地址（留空 = 默认）", box_host.y - 32),
+                ("端口（留空 = 默认）", box_port.y - 32),
+            ]
+            for text, pos_y in labels:
+                try:
+                    surf, _ = font_small.render(text, (210, 220, 235))
+                except (TypeError, AttributeError):
+                    surf = font_small.render(text, True, (210, 220, 235))
+                blit_text_with_shadow(engine.screen, surf, (box_host.x, pos_y))
+
+            # 文本输入显示
+            host_display = host + ("_" if field_index == 0 and cursor_visible else "")
+            if not host_display and field_index != 0:
+                host_display = ""
+            port_display = port + ("_" if field_index == 1 and cursor_visible else "")
+
+            try:
+                host_surf, _ = font_big.render(host_display or "", (255, 255, 255))
+            except (TypeError, AttributeError):
+                host_surf = font_big.render(host_display or "", True, (255, 255, 255))
+            try:
+                port_surf, _ = font_big.render(port_display or "", (255, 255, 255))
+            except (TypeError, AttributeError):
+                port_surf = font_big.render(port_display or "", True, (255, 255, 255))
+
+            engine.screen.blit(host_surf, (box_host.x + 16, box_host.y + (box_host.height - host_surf.get_height()) // 2))
+            engine.screen.blit(port_surf, (box_port.x + 16, box_port.y + (box_port.height - port_surf.get_height()) // 2))
+
+            # 按键提示
+            hint_text = "Enter 保存，ESC 取消，Tab/↑↓ 切换"
+            try:
+                hint_surf, _ = font_hint.render(hint_text, (200, 210, 220))
+            except (TypeError, AttributeError):
+                hint_surf = font_hint.render(hint_text, True, (200, 210, 220))
+            blit_text_with_shadow(engine.screen, hint_surf, (engine.screen.get_width() // 2 - hint_surf.get_width() // 2, box_port.y + box_port.height + 40))
+
+            # 错误提示
+            if error_msg:
+                try:
+                    err_surf, _ = font_small.render(error_msg, (255, 120, 120))
+                except (TypeError, AttributeError):
+                    err_surf = font_small.render(error_msg, True, (255, 120, 120))
+                blit_text_with_shadow(engine.screen, err_surf, (engine.screen.get_width() // 2 - err_surf.get_width() // 2, box_port.y + box_port.height + 70))
+
+            engine.end_frame()
+    finally:
+        if repeat_enabled:
+            try:
+                if orig_repeat and orig_repeat[0] > 0 and orig_repeat[1] > 0:
+                    pygame.key.set_repeat(orig_repeat[0], orig_repeat[1])
                 else:
-                    ch = ev.unicode
-                    if not ch:
-                        continue
-                    if field_index == 0:
-                        if ch in allowed_host_chars and len(host) < 64:
-                            host += ch
-                    else:
-                        if ch.isdigit() and len(port) < 5:
-                            port += ch
-
-        # 绘制背景
-        if bg_menu is not None:
-            engine.screen.blit(bg_menu, (0, 0))
-        engine.screen.blit(dim_overlay, (0, 0))
-
-        # 标题
-        try:
-            title, _ = font_big.render("联机服务器设置", (255, 240, 200))
-        except (TypeError, AttributeError):
-            title = font_big.render("联机服务器设置", True, (255, 240, 200))
-        blit_text_with_shadow(engine.screen, title, (engine.screen.get_width() // 2 - title.get_width() // 2, 170))
-
-        # 默认提示
-        default_text = f"默认：{host_default}:{port_default}"
-        try:
-            default_surf, _ = font_hint.render(default_text, (200, 210, 220))
-        except (TypeError, AttributeError):
-            default_surf = font_hint.render(default_text, True, (200, 210, 220))
-        blit_text_with_shadow(engine.screen, default_surf, (engine.screen.get_width() // 2 - default_surf.get_width() // 2, 220))
-
-        # 输入框
-        input_box_w = 520
-        input_box_h = 56
-        start_y = 270
-        box_host = pygame.Rect(engine.screen.get_width() // 2 - input_box_w // 2, start_y, input_box_w, input_box_h)
-        box_port = pygame.Rect(engine.screen.get_width() // 2 - input_box_w // 2, start_y + 90, input_box_w, input_box_h)
-
-        def draw_box(rect, active):
-            color_border = (120, 180, 240) if active else (90, 120, 160)
-            pygame.draw.rect(engine.screen, (40, 50, 60), rect, border_radius=8)
-            pygame.draw.rect(engine.screen, color_border, rect, width=2, border_radius=8)
-
-        draw_box(box_host, field_index == 0)
-        draw_box(box_port, field_index == 1)
-
-        # 标签
-        labels = [
-            ("服务器地址（留空 = 默认）", box_host.y - 32),
-            ("端口（留空 = 默认）", box_port.y - 32),
-        ]
-        for text, pos_y in labels:
-            try:
-                surf, _ = font_small.render(text, (210, 220, 235))
-            except (TypeError, AttributeError):
-                surf = font_small.render(text, True, (210, 220, 235))
-            blit_text_with_shadow(engine.screen, surf, (box_host.x, pos_y))
-
-        # 文本输入显示
-        host_display = host + ("_" if field_index == 0 and cursor_visible else "")
-        if not host_display and field_index != 0:
-            host_display = ""
-        port_display = port + ("_" if field_index == 1 and cursor_visible else "")
-
-        try:
-            host_surf, _ = font_big.render(host_display or "", (255, 255, 255))
-        except (TypeError, AttributeError):
-            host_surf = font_big.render(host_display or "", True, (255, 255, 255))
-        try:
-            port_surf, _ = font_big.render(port_display or "", (255, 255, 255))
-        except (TypeError, AttributeError):
-            port_surf = font_big.render(port_display or "", True, (255, 255, 255))
-
-        engine.screen.blit(host_surf, (box_host.x + 16, box_host.y + (box_host.height - host_surf.get_height()) // 2))
-        engine.screen.blit(port_surf, (box_port.x + 16, box_port.y + (box_port.height - port_surf.get_height()) // 2))
-
-        # 按键提示
-        hint_text = "Enter 保存，ESC 取消，Tab/↑↓ 切换"
-        try:
-            hint_surf, _ = font_hint.render(hint_text, (200, 210, 220))
-        except (TypeError, AttributeError):
-            hint_surf = font_hint.render(hint_text, True, (200, 210, 220))
-        blit_text_with_shadow(engine.screen, hint_surf, (engine.screen.get_width() // 2 - hint_surf.get_width() // 2, box_port.y + box_port.height + 40))
-
-        # 错误提示
-        if error_msg:
-            try:
-                err_surf, _ = font_small.render(error_msg, (255, 120, 120))
-            except (TypeError, AttributeError):
-                err_surf = font_small.render(error_msg, True, (255, 120, 120))
-            blit_text_with_shadow(engine.screen, err_surf, (engine.screen.get_width() // 2 - err_surf.get_width() // 2, box_port.y + box_port.height + 70))
-
-        engine.end_frame()
+                    pygame.key.set_repeat()
+            except Exception:
+                pass
 
     return None
 
@@ -317,6 +351,8 @@ def run() -> None:
     font_hint = choose_font(18)  # 提示文字字体
 
     cfg = load_config()
+    muted_flag = bool(settings_store.get_setting("muted", False))
+    assets.set_audio_config(muted=muted_flag)
 
     # 背景图（自适应窗口尺寸）
     bg_size = (engine.screen.get_width(), engine.screen.get_height())

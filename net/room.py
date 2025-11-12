@@ -28,6 +28,7 @@ class Room:
         self.invite_code = room_id[:6].upper()
         self.waiting_for_second = True
         self.countdown_until: Optional[float] = None
+        self.archived_players: Dict[str, Dict[str, Any]] = {}
 
     # ------------------------------------------------------------------ runtime
     def step(self, dt: float) -> None:
@@ -94,16 +95,78 @@ class Room:
         self.ensure_player(player_id)
         self.world.handle_input(player_id, ClientInput(move_x=move_x, move_y=move_y, fire=fire, timestamp=ts))
 
+    def _prune_archived(self, ttl: float = 300.0) -> None:
+        now = time.time()
+        expired = [pid for pid, meta in self.archived_players.items() if now - meta.get("timestamp", now) > ttl]
+        for pid in expired:
+            self.archived_players.pop(pid, None)
+
     def bind_client(self, client: Any, player_id: Optional[str] = None) -> str:
-        pid = player_id or uuid.uuid4().hex[:6]
-        self.client_to_player_id[client] = pid
-        self.ensure_player(pid)
-        return pid
+        self._prune_archived()
+        candidate = None
+        if player_id:
+            candidate = str(player_id).upper()
+            if not candidate:
+                candidate = None
+            elif candidate in self.client_to_player_id.values():
+                candidate = None
+        if candidate is None:
+            candidate = uuid.uuid4().hex[:10].upper()
+            while candidate in self.client_to_player_id.values():
+                candidate = uuid.uuid4().hex[:10].upper()
+        self.client_to_player_id[client] = candidate
+        self.ensure_player(candidate)
+        archived = self.archived_players.pop(candidate, None)
+        if archived and "state" in archived:
+            self.world.import_player_state(candidate, archived["state"])
+        return candidate
+
+    def rebind_client(self, client: Any, player_id: str) -> Optional[str]:
+        if not player_id:
+            return None
+        desired = str(player_id).upper()
+        if not desired:
+            return None
+        current = self.client_to_player_id.get(client)
+        if current == desired:
+            return desired
+        if desired in self.client_to_player_id.values():
+            # 该ID已被其他在线玩家占用，拒绝重绑定
+            return current
+        self._prune_archived()
+        snapshot = self.archived_players.pop(desired, None)
+        if current:
+            # 将当前绑定的临时角色归档后移除
+            export = self.world.export_player_state(current)
+            if export:
+                self.archived_players[current] = {"timestamp": time.time(), "state": export}
+            self.client_to_player_id.pop(client, None)
+            self.world.remove_player(current)
+        self.client_to_player_id[client] = desired
+        self.ensure_player(desired)
+        if snapshot and "state" in snapshot:
+            self.world.import_player_state(desired, snapshot["state"])
+        return desired
 
     def remove_client(self, client: Any) -> None:
         pid = self.client_to_player_id.pop(client, None)
         if pid:
+            export = self.world.export_player_state(pid)
+            if export:
+                self.archived_players[pid] = {"timestamp": time.time(), "state": export}
             self.world.remove_player(pid)
+            self._prune_archived()
+            remaining = len(self.world.players)
+            if remaining <= 1:
+                self.waiting_for_second = True
+                self.countdown_until = None
+                self.world.start_time = None
+                status = "waiting"
+                countdown = None
+            else:
+                status = self.state.get("status", "running")
+                countdown = self.state.get("countdown")
+            self.state = self._compose_state(status, countdown)
 
     # ------------------------------------------------------------------ helpers
     def is_full(self) -> bool:

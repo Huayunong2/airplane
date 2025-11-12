@@ -83,11 +83,18 @@ class Server:
                     room.clients.discard(c)
                     room.remove_client(c)
             self._maybe_cleanup_room(room)
+            # 断开连接后若仍有客户端，立即再广播一次，提示剩余玩家等待重连
+            if room.clients:
+                try:
+                    await self._broadcast_room_state(room)
+                except Exception:
+                    pass
 
     async def handler(self, ws: WebSocketServerProtocol, path: str = "") -> None:
         # 从查询参数中获取房间号（invite_code）
         invite_code = None
         create_new = False
+        requested_player_id = None
         if path:
             # 解析查询参数，例如: /?invite_code=ABC123 或 /?create=true
             from urllib.parse import parse_qs, urlparse
@@ -97,6 +104,8 @@ class Server:
                 invite_code = params["invite_code"][0].upper() if params["invite_code"] else None
             if "create" in params:
                 create_new = params["create"][0].lower() == "true"
+            if "player_id" in params:
+                requested_player_id = params["player_id"][0].upper() if params["player_id"] else None
         
         # 根据房间号查找或创建房间（先从路径参数获取）
         room = await self._find_or_create_room(invite_code, create_new)
@@ -112,7 +121,7 @@ class Server:
                 await ws.close(code=4000, reason="room full")
                 return
             room.clients.add(ws)
-            player_id = room.bind_client(ws)
+            player_id = room.bind_client(ws, requested_player_id)
         
         # 发送欢迎消息
         try:
@@ -147,6 +156,18 @@ class Server:
                                         player_id = new_room.bind_client(ws)
                                     room = new_room
                                     # 发送新的欢迎消息
+                                    try:
+                                        token, ts = encode_with_timestamp(b"welcome")
+                                        welcome_payload = {"token": token, "room": room.room_id, "player_id": player_id, "invite_code": room.invite_code}
+                                        await ws.send(make_envelope("welcome", welcome_payload, ts).to_json())
+                                    except Exception:
+                                        pass
+                        desired_pid = d.get("player_id")
+                        if desired_pid:
+                            async with room.lock:
+                                rebound = room.rebind_client(ws, desired_pid)
+                                if rebound:
+                                    player_id = rebound
                                     try:
                                         token, ts = encode_with_timestamp(b"welcome")
                                         welcome_payload = {"token": token, "room": room.room_id, "player_id": player_id, "invite_code": room.invite_code}

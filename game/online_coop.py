@@ -46,7 +46,7 @@ def choose_font(size: int) -> pygame.font.Font:
 class NetClient:
     def __init__(self, uri: str, player_id: str, invite_code: Optional[str] = None, create_new: bool = False):
         self.uri = uri
-        self.player_id = player_id
+        self.player_id = player_id.upper()
         self.invite_code = invite_code.upper() if invite_code else None
         self.create_new = create_new
         self.state_remote = {}  # {player_id: {x,y,hp}}
@@ -59,20 +59,24 @@ class NetClient:
         self.last_state_ts = 0.0
         self.meta_status = {"status": "connecting", "countdown": None, "invite_code": ""}
         self.start_time = 0.0
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._thread: Optional[threading.Thread] = None
 
     async def _run_ws(self):
         import websockets
         try:
             # 构建连接URI，包含房间号信息
             connect_uri = self.uri
-            if self.invite_code or self.create_new:
-                from urllib.parse import urlparse, urlencode, urlunparse
-                parsed = urlparse(connect_uri)
-                params = {}
-                if self.invite_code:
-                    params["invite_code"] = self.invite_code
-                if self.create_new:
-                    params["create"] = "true"
+            from urllib.parse import urlparse, urlencode, urlunparse
+            parsed = urlparse(connect_uri)
+            params = {}
+            if self.invite_code:
+                params["invite_code"] = self.invite_code
+            if self.create_new:
+                params["create"] = "true"
+            if self.player_id:
+                params["player_id"] = self.player_id
+            if params:
                 query = urlencode(params)
                 parsed = parsed._replace(query=query)
                 connect_uri = urlunparse(parsed)
@@ -88,6 +92,8 @@ class NetClient:
                             join_payload["invite_code"] = self.invite_code
                         if self.create_new:
                             join_payload["create"] = True
+                        if self.player_id:
+                            join_payload["player_id"] = self.player_id
                         env = make_envelope("join", join_payload, time.time())
                         await ws.send(env.to_json())
                     except Exception:
@@ -129,7 +135,12 @@ class NetClient:
                             data = obj.get("d", {})
                             pid = data.get("player_id")
                             if pid:
-                                self.player_id = pid
+                                pid_norm = str(pid).upper()
+                                self.player_id = pid_norm
+                                try:
+                                    settings_store.set_setting("net_player_id", pid_norm)
+                                except Exception:
+                                    pass
                             if data.get("invite_code"):
                                 self.meta_status["invite_code"] = data["invite_code"]
                                 self.invite_code = data.get("invite_code", self.invite_code)
@@ -142,13 +153,54 @@ class NetClient:
             self.connected = False
             self.ws = None
 
+    async def _close_ws(self):
+        ws = self.ws
+        if ws is None:
+            return
+        try:
+            if not ws.closed:
+                await ws.close(code=4003, reason="client exit")
+                await ws.wait_closed()
+        except Exception:
+            pass
+        finally:
+            self.ws = None
+
     def start(self):
+        if self._thread and self._thread.is_alive():
+            return
         loop = asyncio.new_event_loop()
+        self._loop = loop
+
         def run_loop():
             asyncio.set_event_loop(loop)
-            loop.run_until_complete(self._run_ws())
+            try:
+                loop.run_until_complete(self._run_ws())
+            finally:
+                loop.close()
+                self._loop = None
+                self._thread = None
+
         t = threading.Thread(target=run_loop, daemon=True)
+        self._thread = t
         t.start()
+
+    def stop(self):
+        self._stop = True
+        loop = self._loop
+        if loop and not loop.is_closed():
+            try:
+                future = asyncio.run_coroutine_threadsafe(self._close_ws(), loop)
+                future.result(timeout=0.8)
+            except Exception:
+                pass
+        if self._thread and self._thread.is_alive():
+            try:
+                self._thread.join(timeout=0.8)
+            except Exception:
+                pass
+        self._loop = None
+        self._thread = None
 
     async def send_input(self, move_x: float, move_y: float, fire: bool):
         if self.ws is None:
@@ -274,6 +326,9 @@ def run(as_child: bool = True, engine: "Engine | None" = None, invite_code: Opti
     paused_world_snapshot: Optional[dict] = None
     seen_boss_ids: set[int] = set()
     have_prev_enemy_snapshot: bool = False
+    waiting_for_peer: bool = False
+    prev_remote_ids: set[str] = set()
+    game_over_pending_exit: bool = False
 
     # 战斗BGM（客户端本地播放，保证双方一致）
     assets.play_bgm("bgm/battle.ogg", 0.45, loop=True)
@@ -296,8 +351,19 @@ def run(as_child: bool = True, engine: "Engine | None" = None, invite_code: Opti
     ws_port = override_port_int if override_port_int else cfg["network"]["ws_port"]
     uri = f"ws://{ws_host}:{ws_port}"
     logger.info("Connecting to server %s:%s", ws_host, ws_port)
-    player_id = uuid.uuid4().hex[:6]
-    net = NetClient(uri, player_id, invite_code=invite_code, create_new=create_new)
+    persisted_pid = settings_store.get_setting("net_player_id", "")
+    if isinstance(persisted_pid, str):
+        persisted_pid = persisted_pid.strip().upper()
+    else:
+        persisted_pid = str(persisted_pid).strip().upper()
+    if not persisted_pid or len(persisted_pid) < 4:
+        persisted_pid = uuid.uuid4().hex[:10].upper()
+        try:
+            settings_store.set_setting("net_player_id", persisted_pid)
+        except Exception:
+            pass
+
+    net = NetClient(uri, persisted_pid, invite_code=invite_code, create_new=create_new)
     net.start()
 
     pause_menu = PauseMenu(engine.screen.get_width(), engine.screen.get_height())
@@ -311,9 +377,8 @@ def run(as_child: bool = True, engine: "Engine | None" = None, invite_code: Opti
 
     font = choose_font(22)
     font_big = choose_font(48)  # 用于游戏结束提示
+    font_notice = choose_font(32)
     loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
     last_send = 0.0
     running = True
     ui_state = "running"
@@ -342,6 +407,28 @@ def run(as_child: bool = True, engine: "Engine | None" = None, invite_code: Opti
                 if st.get("hp", 0) > 0:
                     all_players_dead = False
                     break
+
+        current_remote_ids = {pid for pid in players_snapshot if pid != net.player_id}
+        remote_count = len(current_remote_ids)
+
+        if waiting_for_peer:
+            if remote_count > 0:
+                waiting_for_peer = False
+                ui_state = "running"
+                pending_zero_input = True
+                paused_world_snapshot = None
+        else:
+            if prev_remote_ids and remote_count == 0 and players_snapshot:
+                waiting_for_peer = True
+                ui_state = "waiting_peer"
+                pending_zero_input = True
+                pause_menu.hide()
+
+        if game_over_pending_exit and prev_remote_ids and remote_count == 0:
+            running = False
+            break
+
+        prev_remote_ids = current_remote_ids
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -366,6 +453,10 @@ def run(as_child: bool = True, engine: "Engine | None" = None, invite_code: Opti
                         running = False
                     # 其余选项（如restart）在多人模式中不可用，忽略
                     continue
+                if ui_state == "waiting_peer":
+                    if event.key == pygame.K_ESCAPE:
+                        running = False
+                    continue
 
                 if event.key in (pygame.K_ESCAPE, pygame.K_p):
                     pause_menu.show()
@@ -374,7 +465,7 @@ def run(as_child: bool = True, engine: "Engine | None" = None, invite_code: Opti
                     continue
 
         # 根据当前UI状态选择用于渲染的世界快照（暂停时冻结画面）
-        if ui_state == "paused":
+        if ui_state in ("paused", "waiting_peer"):
             if paused_world_snapshot is None:
                 paused_world_snapshot = latest_world
             world = paused_world_snapshot
@@ -391,8 +482,13 @@ def run(as_child: bool = True, engine: "Engine | None" = None, invite_code: Opti
                 if st.get("hp", 0) > 0:
                     all_players_dead = False
                     break
+            if all_players_dead:
+                game_over_pending_exit = True
+        elif status_tag in ("waiting", "countdown") and len(players_snapshot) <= 1:
+            # 游戏已重置或重新匹配，重置标记
+            game_over_pending_exit = False
 
-        if ui_state == "paused":
+        if ui_state in ("paused", "waiting_peer"):
             move_x = 0.0
             move_y = 0.0
             want_fire = False
@@ -842,9 +938,24 @@ def run(as_child: bool = True, engine: "Engine | None" = None, invite_code: Opti
         # 第五行：多人信息和连接状态
         y_cursor += 25
         conn_text = "已连接" if status["connected"] else "未连接"
-        multi_info = f"多人: 房间码:{invite_code}  玩家数:{len(players_snapshot)}  远端:{remote_count}"
-        multi_surf = font_small.render(multi_info, True, (200, 220, 240))
-        engine.screen.blit(multi_surf, (12, y_cursor))
+        prefix = "多人: 房间码:"
+        prefix_surf = font_small.render(prefix, True, (200, 220, 240))
+        engine.screen.blit(prefix_surf, (12, y_cursor))
+        x_cursor = 12 + prefix_surf.get_width()
+        code_text = invite_code or "------"
+        code_fg = (35, 30, 15)
+        code_bg = (255, 246, 150)
+        code_surf = font_small.render(code_text, True, code_fg)
+        padding_x = 6
+        padding_y = 3
+        code_rect = pygame.Rect(x_cursor, y_cursor - padding_y, code_surf.get_width() + padding_x * 2, code_surf.get_height() + padding_y * 2)
+        pygame.draw.rect(engine.screen, code_bg, code_rect, border_radius=6)
+        pygame.draw.rect(engine.screen, (180, 150, 60), code_rect, width=1, border_radius=6)
+        engine.screen.blit(code_surf, (code_rect.x + padding_x, y_cursor))
+        x_cursor = code_rect.right + 8
+        suffix = f"  玩家数:{len(players_snapshot)}  远端:{remote_count}  状态:{conn_text}"
+        suffix_surf = font_small.render(suffix, True, (200, 220, 240))
+        engine.screen.blit(suffix_surf, (x_cursor, y_cursor))
         
         # 错误信息
         if status.get("last_error") and not status["connected"]:
@@ -880,13 +991,23 @@ def run(as_child: bool = True, engine: "Engine | None" = None, invite_code: Opti
 
         if ui_state == "paused":
             pause_menu.render(engine.screen, None)
+        elif ui_state == "waiting_peer":
+            wait_overlay = pygame.Surface(engine.screen.get_size(), pygame.SRCALPHA)
+            wait_overlay.fill((0, 0, 0, 170))
+            engine.screen.blit(wait_overlay, (0, 0))
+            msg = font_notice.render("队友已离开，等待重新连接...", True, (255, 230, 170))
+            msg_rect = msg.get_rect(center=(engine.screen.get_width() // 2, engine.screen.get_height() // 2 - 20))
+            engine.screen.blit(msg, msg_rect)
+            sub_msg = font.render("按 ESC 退出当前战斗", True, (220, 220, 220))
+            sub_rect = sub_msg.get_rect(center=(engine.screen.get_width() // 2, msg_rect.centery + 50))
+            engine.screen.blit(sub_msg, sub_rect)
 
         engine.end_frame()
 
         # 发送输入/状态（~30Hz）
         now = time.time()
         if now - last_send > 1 / 30:
-            should_send = ui_state != "paused" or pending_zero_input
+            should_send = (ui_state not in ("paused", "waiting_peer")) or pending_zero_input
             if should_send:
                 try:
                     loop.run_until_complete(net.send_input(move_x, move_y, bool(want_fire)))
@@ -895,6 +1016,13 @@ def run(as_child: bool = True, engine: "Engine | None" = None, invite_code: Opti
                 last_send = now
                 if pending_zero_input:
                     pending_zero_input = False
+
+    try:
+        loop.run_until_complete(net.send_input(0.0, 0.0, False))
+    except Exception:
+        pass
+    net.stop()
+    loop.close()
 
     if as_child:
         assets.play_bgm("bgm/menu.ogg", 0.35, loop=True)

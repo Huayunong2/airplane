@@ -181,6 +181,65 @@ class EndlessWorld:
             self.add_player(player_id)
         self.inputs[player_id] = inp
 
+    def export_player_state(self, player_id: str) -> Optional[Dict[str, Any]]:
+        state = self.players.get(player_id)
+        if state is None:
+            return None
+        return {
+            "hp": state.hp,
+            "max_hp": state.max_hp,
+            "score": state.score,
+            "evo_level": state.evolution_level,
+            "evo_coins": state.evo_coin_count,
+            "revives": state.revives,
+            "revive_granted": state.revive_granted,
+            "buffs": dict(state.buffs),
+            "combo": state.combo,
+            "combo_last_hit": state.combo_last_hit,
+            "currency": state.currency,
+            "player_attack_speed_mult": state.player_attack_speed_mult,
+            "bullet_cap": state.bullet_cap,
+            "last_contact_damage_time": state.last_contact_damage_time,
+            "last_fire_time": state.last_fire_time,
+            "evolve_effect_until": state.evolve_effect_until,
+            "pos": (state.entity.rect.x, state.entity.rect.y),
+        }
+
+    def import_player_state(self, player_id: str, snapshot: Dict[str, Any]) -> None:
+        state = self.players.get(player_id)
+        if state is None or snapshot is None:
+            return
+        state.max_hp = int(snapshot.get("max_hp", state.max_hp))
+        state.hp = int(snapshot.get("hp", state.hp))
+        if state.max_hp <= 0:
+            state.max_hp = PLAYER_MAX_HP
+        state.hp = max(0, min(state.max_hp, state.hp))
+        state.score = int(snapshot.get("score", state.score))
+        state.evolution_level = int(snapshot.get("evo_level", state.evolution_level))
+        state.evolution_level = max(1, min(5, state.evolution_level))
+        state.evo_coin_count = int(snapshot.get("evo_coins", state.evo_coin_count))
+        state.revives = int(snapshot.get("revives", state.revives))
+        state.revive_granted = bool(snapshot.get("revive_granted", state.revive_granted))
+        buffs = snapshot.get("buffs")
+        if isinstance(buffs, dict):
+            state.buffs = {k: float(v) for k, v in buffs.items()}
+        state.combo = int(snapshot.get("combo", state.combo))
+        state.combo_last_hit = float(snapshot.get("combo_last_hit", state.combo_last_hit or 0.0))
+        state.currency = int(snapshot.get("currency", state.currency))
+        state.player_attack_speed_mult = float(snapshot.get("player_attack_speed_mult", state.player_attack_speed_mult))
+        state.bullet_cap = int(snapshot.get("bullet_cap", state.bullet_cap))
+        state.last_contact_damage_time = float(snapshot.get("last_contact_damage_time", state.last_contact_damage_time or 0.0))
+        state.last_fire_time = float(snapshot.get("last_fire_time", state.last_fire_time or 0.0))
+        state.evolve_effect_until = float(snapshot.get("evolve_effect_until", state.evolve_effect_until or 0.0))
+        pos = snapshot.get("pos")
+        if isinstance(pos, (list, tuple)) and len(pos) == 2:
+            try:
+                state.entity.rect.x = int(pos[0])
+                state.entity.rect.y = int(pos[1])
+            except Exception:
+                pass
+        self.inputs[player_id] = ClientInput(timestamp=time.time())
+
     # ------------------------------------------------------------------ Step
     def step(self, dt: float) -> None:
         now = time.time()

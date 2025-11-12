@@ -1,9 +1,47 @@
 import json
 import os
+import sys
+from pathlib import Path
 from typing import Any, Dict
 
 
-STORE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "configs", "settings_store.json")
+
+def _calc_store_path() -> Path:
+    base_dir = Path(os.path.dirname(os.path.dirname(__file__)))
+    default_path = base_dir / "data" / "configs" / "settings_store.json"
+    is_frozen = bool(getattr(sys, "frozen", False))
+
+    def _try_default() -> Path | None:
+        try:
+            default_path.parent.mkdir(parents=True, exist_ok=True)
+            if default_path.exists():
+                return default_path
+            with default_path.open("a", encoding="utf-8"):
+                pass
+            return default_path
+        except Exception:
+            return None
+
+    if not is_frozen:
+        chosen = _try_default()
+        if chosen is not None and os.access(str(chosen), os.W_OK):
+            return chosen
+
+    prefer_root = os.environ.get("APPDATA")
+    if prefer_root:
+        prefer_dir = Path(prefer_root) / "AirBattle"
+    else:
+        prefer_dir = Path.home() / "AirBattle"
+    try:
+        prefer_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        fallback_dir = Path.home() / ".airbattle"
+        fallback_dir.mkdir(parents=True, exist_ok=True)
+        prefer_dir = fallback_dir
+    return prefer_dir / "settings_store.json"
+
+
+STORE_PATH = _calc_store_path()
 
 overrides: Dict[str, Any] = {
     # keys optional: spawn_interval, enemy_cap, fire_interval, burst_max
@@ -26,6 +64,8 @@ runtime_settings: Dict[str, Any] = {
     # 联机服务器覆盖：主机地址 & 端口（0 表示使用默认配置）
     "net_host": "",
     "net_port": 0,
+    # 持久化的联机玩家ID（用于重连保留属性）
+    "net_player_id": "",
 }
 
 
@@ -48,7 +88,7 @@ def _deep_copy(value: Any) -> Any:
 
 
 def _ensure_dir() -> None:
-    os.makedirs(os.path.dirname(STORE_PATH), exist_ok=True)
+    STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _save_store() -> None:
@@ -58,17 +98,17 @@ def _save_store() -> None:
             "overrides": _normalize(overrides),
             "runtime": _normalize(runtime_settings),
         }
-        with open(STORE_PATH, "w", encoding="utf-8") as f:
+        with STORE_PATH.open("w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
     except Exception:
         return
 
 
 def _load_store() -> None:
-    if not os.path.exists(STORE_PATH):
+    if not STORE_PATH.exists():
         return
     try:
-        with open(STORE_PATH, "r", encoding="utf-8") as f:
+        with STORE_PATH.open("r", encoding="utf-8") as f:
             data = json.load(f)
     except Exception:
         return
