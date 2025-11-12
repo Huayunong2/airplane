@@ -1,0 +1,158 @@
+{
+  "overrides": {
+    "spawn_interval": 5.0,
+    "enemy_cap": 10,
+    "fire_interval": 5.0,
+    "burst_max": 0
+  },
+  "runtime": {
+    "key_scheme": "wasd",
+    "muted": false,
+    "show_hitbox": true,
+    "fullscreen": false,
+    "drop_table": {
+      "easy": [
+        [
+          "heal",
+          80
+        ],
+        [
+          "x2",
+          0
+        ],
+        [
+          "spread",
+          0
+        ],
+        [
+          "haste",
+          3
+        ],
+        [
+          "power",
+          0
+        ],
+        [
+          "piercing",
+          0
+        ],
+        [
+          "shield",
+          0
+        ],
+        [
+          "clearscreen",
+          0
+        ]
+      ],
+      "normal": [
+        [
+          "heal",
+          80
+        ],
+        [
+          "x2",
+          0
+        ],
+        [
+          "spread",
+          0
+        ],
+        [
+          "haste",
+          3
+        ],
+        [
+          "power",
+          0
+        ],
+        [
+          "piercing",
+          0
+        ],
+        [
+          "shield",
+          0
+        ],
+        [
+          "clearscreen",
+          0
+        ]
+      ],
+      "hard": [
+        [
+          "heal",
+          80
+        ],
+        [
+          "x2",
+          0
+        ],
+        [
+          "spread",
+          0
+        ],
+        [
+          "haste",
+          3
+        ],
+        [
+          "power",
+          0
+        ],
+        [
+          "piercing",
+          0
+        ],
+        [
+          "shield",
+          0
+        ],
+        [
+          "clearscreen",
+          0
+        ]
+      ],
+      "custom": [
+        [
+          "heal",
+          80
+        ],
+        [
+          "x2",
+          0
+        ],
+        [
+          "spread",
+          0
+        ],
+        [
+          "haste",
+          3
+        ],
+        [
+          "power",
+          0
+        ],
+        [
+          "piercing",
+          0
+        ],
+        [
+          "shield",
+          0
+        ],
+        [
+          "clearscreen",
+          0
+        ]
+      ]
+    },
+    "drop_rate": {
+      "easy": 1.0,
+      "normal": 1.0,
+      "hard": 0.97,
+      "custom": 1.0
+    }
+  }
+}
