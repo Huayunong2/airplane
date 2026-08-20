@@ -10,6 +10,7 @@ Python 二维飞机对战游戏（单人/多人联机 + 开放接口）
 
 - **安装依赖**
 
+
 ```bash
 python -m pip install --upgrade pip
 pip install -r requirements.txt
